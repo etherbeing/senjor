@@ -1,0 +1,26 @@
+[project]
+name = "senjor"
+version = "0.1.0"
+description = "GraphQL + Socket.IO connector for your django app. Turn your django project into an RTC capable one by just adding a few lines, fully extensible and adaptable to your need."
+authors = [
+    {name = "Esteban Chacon Martin",email = "etherbeing99@proton.me"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "graphene",
+    "django-allauth[socialaccount] (>=65.7.0,<66.0.0)",
+    "channels (>=4.2.2,<5.0.0)",
+    "python-socketio (>=5.13.0,<6.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name="senjor"
+packages = [
+    {include="src", from = "."}
+]

@@ -1,0 +1,33 @@
+import socketio
+from channels.routing import ProtocolTypeRouter
+from django.core.handlers.asgi import ASGIHandler
+from django.conf import settings
+
+
+def setup_sio(app: ASGIHandler, gql_url: str='/ws/graphql/', gql_subscription_channel: str="graph-subscribe"):
+    """
+    Setup socket.io
+    This function is used to setup the socket.io server, it uses the django settings to configure the server and the app.
+    """
+    sio = socketio.AsyncServer(
+        logger=settings.DEBUG, 
+        engineio_logger=settings.DEBUG,
+        async_mode='asgi',
+        namespaces="*",
+        cors_allowed_origins='*',
+    )
+
+    app = socketio.ASGIApp(sio, app)
+    only_sio = socketio.ASGIApp(sio, socketio_path="/socket.io")
+    router = ProtocolTypeRouter(
+        {
+            'http': app,
+            "websocket": only_sio, # 
+        }
+    )
+    settings.SIO_ROUTER = router
+    settings.SIO_CORE = sio
+    settings.SIO_URL = gql_url
+    settings.SIO_SUBSCRIPTION_CHANNEL = gql_subscription_channel
+    from . import events
+    return router
