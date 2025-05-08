@@ -29,16 +29,7 @@ class GQLModelMeta(models.base.ModelBase):
                     ),
                 ):
                     field: GQLField = instance._meta.get_field(field_name)
-                    if field.is_relation:
-                        object_type = graphql_schema.model_to_schema(instance)
-                        if object_type:
-                            # if field.many_to_many:
-                            #     parent_ot.add_field(field.name, field.GQLObjectType(object_type), field)
-                            # else:
-                            parent_ot.add_field(field.name, Field(object_type), field)
-                        else:
-                            parent_ot.add_pending_field(field.name, field.GQLObjectType,  model_instance=instance, model_field=field)
-                    elif isinstance(field, GQLField):
+                    if isinstance(field, GQLField):
                         parent_ot.add_field(field.name, field.GQLObjectType(), field)
                     elif field.primary_key: # Register the primary key for filtering purposes TODO make this behaviour optional.
                         parent_ot.add_field(field.name, GQLAutoField.GQLObjectType(), field)

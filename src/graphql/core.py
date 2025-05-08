@@ -32,27 +32,43 @@ class GQLObjectType:
         self._fields[name] = value
         self._model_field = model_field
         return self
-    
-    def add_pending_field(self, name: str, value: Self, *args, model_field: models.Field, model_instance: models.Model, **kwargs,):
+
+    def add_pending_field(
+        self,
+        name: str,
+        value: Self,
+        *args,
+        model_field: models.Field,
+        model_instance: models.Model,
+        **kwargs,
+    ):
         """
         Schedule a field to be added to the schema
         """
-        self._pending_fields.append({
-            "name": name,
-            "value": value,
-            "args": args,
-            "kwargs": kwargs,
-            "field": model_field,
-            "model": model_instance
-        })
+        self._pending_fields.append(
+            {
+                "name": name,
+                "value": value,
+                "args": args,
+                "kwargs": kwargs,
+                "field": model_field,
+                "model": model_instance,
+            }
+        )
         graphql_schema.add_pending_object_type(self)
         return self
-    
-    def complete(self,):
+
+    def complete(
+        self,
+    ):
         for field in self._pending_fields:
             field_: models.ManyToManyField = field.get("field")
             object_type = graphql_schema.model_to_schema(field_.related_model)
-            print(graphql_schema._fields, object_type, field_.related_model._meta.object_name)
+            print(
+                graphql_schema._fields,
+                object_type,
+                field_.related_model._meta.object_name,
+            )
 
     def generate_type(
         self,
@@ -69,6 +85,11 @@ class GQLObjectType:
             self._name, (graphene.ObjectType,), fields
         )
         return object_type
+
+    def __repr__(
+        self,
+    ):
+        return str(self._fields)
 
 
 class FieldStruct(TypedDict):
@@ -96,12 +117,10 @@ class GQLRootSchema:
         self, model: models.Model, operation_type: GQLSchemaType = "query"
     ) -> Optional[graphene.ObjectType]:
         return self._fields.get(operation_type, {}).get(
-            model._meta.object_name, None # type: ignore
+            model._meta.object_name, None  # type: ignore
         )
-    
-    def add_pending_object_type(
-        self, object_type: GQLObjectType
-    ):
+
+    def add_pending_object_type(self, object_type: GQLObjectType):
         self._pending_object_types[object_type._name] = object_type
         return self
 
@@ -118,7 +137,6 @@ class GQLRootSchema:
         self._fields[gql_type][name] = gql_field
         self._model_instance = model_instance
         return gql_field
-        
 
     def add_node(
         self, gql_type: GQLSchemaType, name: str, model_instance: models.Model
@@ -152,15 +170,10 @@ class GQLRootSchema:
             if isinstance(field_value, GQLObjectType):
                 fields[field_key.lower()] = field_value.generate_type()
             else:
-                # if isinstance(field_value, graphene.ObjectType):
-                #     fields[field_key.lower()] = graphene.Field(field_value)
-                # else:
                 fields[field_key.lower()] = field_value
             field = fields[field_key.lower()]
             if gql_type == "query" or gql_type == "general":
-                fields[field_key.lower()] = graphene.Field(
-                    field,
-                )
+                fields[field_key.lower()] = graphene.Field(field)
             elif gql_type == "mutation" or gql_type == "general":
                 fields[field_key.lower()] = field.Field()
             elif gql_type == "subscription" or gql_type == "general":
@@ -222,6 +235,11 @@ class GQLRootSchema:
         self,
     ):
         return self._fields
+
+    def __repr__(
+        self,
+    ):
+        return str(self._fields)
 
 
 # Root Schema definition
