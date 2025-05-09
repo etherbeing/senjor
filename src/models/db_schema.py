@@ -29,10 +29,19 @@ class GQLModelMeta(models.base.ModelBase):
                     ),
                 ):
                     field: GQLField = instance._meta.get_field(field_name)
-                    if isinstance(field, GQLField):
-                        parent_ot.add_field(field.name, field.GQLObjectType(), field)
-                    elif field.primary_key: # Register the primary key for filtering purposes TODO make this behaviour optional.
-                        parent_ot.add_field(field.name, GQLAutoField.GQLObjectType(), field)
+                    parent_ot.add_field(
+                        field.name,
+                        (
+                            field.GQLObjectType()
+                            if isinstance(field, GQLField)
+                            else (
+                                GQLAutoField.GQLObjectType()
+                                if field.primary_key
+                                else None
+                            )
+                        ),
+                        field,
+                    )
         return instance
 
 

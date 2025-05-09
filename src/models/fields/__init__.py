@@ -105,6 +105,7 @@ class GQLField(fields.Field):
 
     By using the parameter is_argument, you turn the field into an argument for its ObjectType definition.
     """
+
     GQLObjectType: graphene.ObjectType = graphene.ObjectType
 
     def __init__(
@@ -113,7 +114,7 @@ class GQLField(fields.Field):
         gql_access: Optional[AccessControl] = None,
         gql_action: ActionType = None,
         gql_is_argument: bool = False,
-        **kwargs
+        **kwargs,
     ):
         """
         Create your graphql field like you create any other django model field
@@ -123,14 +124,18 @@ class GQLField(fields.Field):
         """
         super().__init__(*args, **kwargs)
 
+
 class GQLAutoField(fields.AutoField, GQLField):
     """
     This class is the default auto field once this is installed
     """
+
     GQLObjectType = graphene.BigInt
+
 
 class GQLBigAutoField(fields.BigAutoField, GQLField):
     GQLObjectType = graphene.BigInt
+
 
 class GQLForeignKey(ForeignKey, GQLField):
     GQLObjectType = graphene.ObjectType
@@ -138,6 +143,7 @@ class GQLForeignKey(ForeignKey, GQLField):
 
 class GQLManyToManyField(ManyToManyField, GQLField):
     GQLObjectType = graphene.ObjectType
+
 
 class GQLURLField(fields.URLField, GQLField):
     GQLObjectType = graphene.String

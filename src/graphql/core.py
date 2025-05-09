@@ -11,10 +11,14 @@ class GQLObjectType:
     def __init__(self, name: str = None):
         self._name = name
         self._fields: dict[str, GQLObjectType] = {}
+        self._args: dict[str, graphene.Argument] = {}
         self._model_field: GQLObjectType
         self._pending_fields: list[dict[str, Any]] = []
 
-    def add_field(self, name: str, value: Self, model_field: Self):
+    def get_args(self,):
+        return self._args
+
+    def add_field(self, name: str, value: Self, model_field: models.Field):
         """
         Add a field to this ObjectType, stack it so you can nest ObjectTypes like below
         ```py
@@ -30,6 +34,14 @@ class GQLObjectType:
         ```
         """
         self._fields[name] = value
+        if not model_field.is_relation:
+            self._args[name] = value
+        else:
+            if model_field.many_to_many:
+                self._args[name] = graphene.Argument(graphene.List(graphene.ID, ))
+            else:
+                self._args[name] = graphene.Argument(graphene.ID)
+        
         self._model_field = model_field
         return self
 
@@ -173,7 +185,7 @@ class GQLRootSchema:
                 fields[field_key.lower()] = field_value
             field = fields[field_key.lower()]
             if gql_type == "query" or gql_type == "general":
-                fields[field_key.lower()] = graphene.Field(field)
+                fields[field_key.lower()] = graphene.Field(field, args=field_value.get_args())
             elif gql_type == "mutation" or gql_type == "general":
                 fields[field_key.lower()] = field.Field()
             elif gql_type == "subscription" or gql_type == "general":
