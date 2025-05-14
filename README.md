@@ -73,7 +73,7 @@ There should be a settings to configure senjor as default public or default priv
 4. Implement the resolvers
 5. Implement the customization and the uniform API
 
-## 
+## ChatGPT Feedback on the project
 
 That’s a solid starting point. You're already close to building something extremely valuable to the community. What you’re aiming to do—**a plug-and-play authentication wrapper for GraphQL queries, mutations, and subscriptions in Django using OAuth2**—**does not yet exist in a clean, reusable form**, and it's **in high demand**.
 
