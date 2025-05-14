@@ -1,3 +1,6 @@
 /dist
 **__pycache__
 _build
+/db.sqlite3
+/_static
+/_templates

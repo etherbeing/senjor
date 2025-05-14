@@ -8,7 +8,7 @@ pip install senjor
 
 ## Post-Install Steps
 ```python
-# settings.py
+# demo.py
 INSTALLED_APPS=[
   ...,
   "senjor",
@@ -30,7 +30,7 @@ from django.core.asgi import get_asgi_application
 
 from senjor import setup_sio
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'yourprojectname.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'yourprojectname.demo')
 
 
 application = setup_sio(get_asgi_application())
