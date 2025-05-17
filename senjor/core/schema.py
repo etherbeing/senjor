@@ -5,8 +5,9 @@ TODO: please REFACTOR this file to be more readable, APIs must follow a tight sc
 import json
 import logging
 from enum import Enum
-from typing import Callable
-from typing import Optional, Any
+from collections.abc import Callable
+from typing import Self
+from typing import Any
 from typing import TypedDict, Literal
 
 import graphene
@@ -19,15 +20,15 @@ from graphql import GraphQLResolveInfo
 # types
 
 class AccessControl(Enum):
-    PRIVATE: int = 0
-    PUBLIC: int = 1
-    PROTECTED: int = 2
+    PRIVATE = 0
+    PUBLIC = 1
+    PROTECTED = 2
 
 
 class ActionType(TypedDict):
-    mutation: Optional[Callable | str]
-    subscription: Optional[Callable | str]
-    query: Optional[Callable | str]
+    mutation: Callable[..., Any] | str | None
+    subscription: Callable[..., Any] | str | None
+    query: Callable[..., Any] | str | None
 
 
 type GQLSchemaType = Literal["query", "mutation", "subscription", "general"]
@@ -38,13 +39,13 @@ type GQLSchemaType = Literal["query", "mutation", "subscription", "general"]
 # GQL Object Type schema
 class GQLObjectType:
 
-    def __init__(self, name: str, operation_type: GQLSchemaType, parent=None, model_class: type[models.Model] = None):
+    def __init__(self, name: str, operation_type: GQLSchemaType, parent:Self|None=None, model_class: type[models.Model]|None = None):
         self._name: str = name
-        self._model_class: type[models.Model] = model_class
+        self._model_class: type[models.Model]|None = model_class
         self._registered: bool = False
         self._operation_type: GQLSchemaType = operation_type
         from senjor.core.attributes import graphql_schema
-        self._parent: GQLRootSchema = parent or graphql_schema
+        self._parent: GQLRootSchema|Any = parent or graphql_schema
         self._fields: set[GQLField] = set()
         self._args: dict[str, graphene.Argument] = {}
 
@@ -92,7 +93,7 @@ class GQLObjectType:
         logging.debug("%s %s", ot_result.__dict__, fields)
         return ot_result
 
-    def _default_resolver(self, root, info: GraphQLResolveInfo, *args, **kwargs):
+    def _default_resolver(self, root:Any, info: GraphQLResolveInfo, *args:list[Any], **kwargs: dict[str, Any]):
         logging.debug(args)
         logging.debug(kwargs)
         logging.debug(info.context.__dict__)
@@ -216,13 +217,13 @@ class GQLField(fields.Field):
     """
 
     gql_object_type: type[graphene.ObjectType] = graphene.String
-    gql_ref_type: Optional[type[graphene.ObjectType]] = None
+    gql_ref_type: type[graphene.ObjectType]|None = None
     gql_value: graphene.Field = None
     gql_name: str
 
     def __init__(
             self,
-            gql_access: Optional[AccessControl] = None,
+            gql_access: AccessControl|None = None,
             gql_action: ActionType = None,
             gql_is_argument: bool = False,
             *args,
@@ -372,13 +373,13 @@ class GQLRootSchema:
 
     def __init__(
             self,
-    ):
+    ) -> None:
         self._model_instance: models.Model
         self._pending_object_types: dict[str, GQLObjectType] = {}
 
     def model_to_schema(
             self, model: models.Model, operation_type: GQLSchemaType = "query"
-    ) -> Optional[graphene.ObjectType]:
+    ) -> graphene.ObjectType|None:
         return self._fields.get(operation_type, {}).get(
             model._meta.object_name, None  # type: ignore
         )
