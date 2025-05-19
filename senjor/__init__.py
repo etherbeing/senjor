@@ -1,4 +1,3 @@
-from .settings import graphene
-from .setup import setup_sio
+from .settings import graphene  # type: ignore
 
 __version__ = "0.1.0"
