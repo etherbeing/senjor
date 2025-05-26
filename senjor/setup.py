@@ -7,6 +7,8 @@ from channels.routing import ProtocolTypeRouter
 from django.conf import settings
 from django.core.handlers.asgi import ASGIHandler
 
+from .events import SenjorRTC
+
 
 def setup_sio(
     app: ASGIHandler | socketio.ASGIApp,
@@ -20,11 +22,11 @@ def setup_sio(
     logging.info("Setting up Socket.IO, Channels, Daphne and ASGI...")
 
     sio = socketio.AsyncServer(
-        logger=settings.DEBUG,
-        engineio_logger=settings.DEBUG,
+        logger=logging.getLogger(),
+        engineio_logger=logging.getLogger(),
         async_mode="asgi",
         namespaces="*",
-        cors_allowed_origins="*",
+        cors_allowed_origins="*",  # FIXME allow only origins configured on the settings make it compatible with ALLOWED_ORIGINS
     )
 
     app = socketio.ASGIApp(sio, app)
@@ -35,16 +37,20 @@ def setup_sio(
             "websocket": only_sio,  #
         }
     )
-    settings.SIO_ROUTER = router
-    settings.SIO_CORE = sio
-    settings.SIO_URL = gql_url
-    settings.SIO_SUBSCRIPTION_CHANNEL = gql_subscription_channel
+    # settings.SIO_ROUTER = router
+    # settings.SIO_URL = gql_url
+    # settings.SIO_SUBSCRIPTION_CHANNEL = gql_subscription_channel
+    # this setup the actual ws router handler to deliver the message where it should
+    SenjorRTC(
+        sio, gql_url=gql_url, gql_subscription_channel=gql_subscription_channel
+    ).setup()
+
     return router
 
 
 def setup_settings():
     logging.debug("Setting up the settings")
-    settings.DEFAULT_AUTO_FIELD = "senjor.core.schema.GQLAutoField"
+    settings.DEFAULT_AUTO_FIELD = "senjor.models.fields.common.GQLAutoField"
 
 
 def setup_senjor(

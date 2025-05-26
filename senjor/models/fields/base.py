@@ -17,12 +17,15 @@ from senjor.models.fields.types import (  # Change the name so it doesnt got mis
 
 
 class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
+    """
+    Manage the fields inside a GraphQL ObjectType, Mutation or Subscriptions
+    """
+
     name: str
     model: DjangoModel
-    # model: DjangoModel
     _gql_object_type: type[BaseType] = graphene.ObjectType
     _gql_field_value: graphene.Field | graphene.List | BaseType | None = None
-    _gql_schema_type: GQLSchemaType = "general"
+    _gql_schema_type: GQLSchemaType = "query"
     descriptor_class = GQLDeferredAttribute
 
     # def __init__(
@@ -33,7 +36,9 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
     #     super().__init__(*args, **kwargs)
 
     def __generate_gql_field(
-        self, discard_related_from: DjangoModel | None = None
+        self,
+        discard_related_from: DjangoModel | None = None,
+        gql_schema_type: GQLSchemaType | None = None,
     ) -> None:
         """
         Generates the GraphQL field from this DB field
@@ -41,6 +46,7 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
         logging.debug(
             "Generating GraphQL field for the DB field %s...", self.get_gql_name()
         )
+        gql_schema_type = gql_schema_type or self._gql_schema_type
         model: DjangoModel | None = getattr(self, "model", None)
         if (
             model and not model._meta.abstract
@@ -48,7 +54,7 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
             kwargs: dict[str, Any] = {}
             kwargs["name"] = self.get_gql_name()
             kwargs["description"] = self.help_text or self.description or self.__doc__  # type: ignore
-            if self._gql_schema_type in ["query", "general"]:
+            if "query" == self._gql_schema_type or True:
                 if self.is_relation and (self.one_to_one or self.many_to_one):  # type: ignore
                     from senjor.models.base import GQLModel
 
@@ -91,7 +97,6 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
                                 .type(**kwargs)  # type: ignore
                             )
                 elif self.is_relation and (self.many_to_many or self.one_to_many):  # type: ignore
-                    # TODO Fix infinite recursion here
                     from senjor.models.base import GQLModel
 
                     # from senjor.models.fields.related.common import GQLRelatedField
@@ -105,7 +110,7 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
                         type[GQLModel], discard_related_from
                     ):
                         self._gql_field_value = graphene.List(
-                            of_type=fk_model.get_gql_object_type(discard_related_from=model).type,  # type: ignore
+                            of_type=fk_model.get_gql_object_type(schema_type=gql_schema_type, discard_related_from=model).type,  # type: ignore
                             **kwargs,
                         )
                     else:
@@ -136,7 +141,7 @@ class GQLField(DjangoField):  # type: ignore[reportMissingTypeArgument]
             )
         if not self._gql_field_value:  # type: ignore
             raise GQLBaseException(
-                "Incorrect tree branch, we are missing a field to be generated possibly leading to inconsistent behavior, please report this at https://github.com/etherbeing/senjor/issues"
+                f"Incorrect tree branch, we are missing a field, explicitly {self.get_gql_name()} when using the schema type {gql_schema_type} to be generated possibly leading to inconsistent behavior, please report this at https://github.com/etherbeing/senjor/issues"
             )
 
     def get_gql_name(

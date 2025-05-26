@@ -1,3 +1,9 @@
+# For some reason it seems that the subscription is calling some field or perhaps is due to calling get_fields or the other methods on the initializer
+# don't know but is "raising You cannot call this from an async context - use a thread or sync_to_async." then we need to do something about it
+# FIXME: Subscriptions aren't displaying the values to the backend for some reason, as the resolver is made perhaps the problem is if GraphQL tries to
+# call the ObjectType resolver if returns None as cls() and at that point is instatiating the models.Model which is not async safe.
+
+import asyncio
 import logging
 from typing import Any, Self, cast
 
@@ -9,33 +15,21 @@ from graphql import FieldNode, GraphQLResolveInfo
 
 from senjor.core.exceptions import GQLBaseException
 from senjor.models.fields.base import GQLField
-from senjor.models.fields.types import FieldStruct, GQLSchemaType
+from senjor.models.fields.types import GQLSchemaType
+
+DEFAULT_SCHEMA_TYPES: list[GQLSchemaType] = ["query", "mutation", "subscription"]
 
 
 class GQLModelMeta(models.base.ModelBase):
-    _gql_fields: FieldStruct = (
-        {  # static field to automatically handle caching on memory of the models  # this are the our own custom set of fields, this arent graphene.Field types so is just for internal usage of the Senjor framework
-            "query": {},
-            "mutation": {},
-            "subscription": {},
-            "general": {},
-        }
-    )
 
     def __new__(cls, name: str, bases: tuple[type[Any]], attrs: dict[str, Any]):
-        instance: GQLModelMeta | None = cls._gql_fields[
-            attrs.get("schema_type", "query")
-        ].get(name, None)
-        if not instance:
-            instance = super().__new__(cls, name, bases, attrs)
-            if not instance._meta.abstract:  # type: ignore
-                logging.debug(
-                    "New instance for model %s is being created",
-                    instance._meta.model_name,  # type: ignore
-                )
-                instance._gql_args = {}  # type: ignore
-                cls._gql_fields[attrs.get("schema_type", "query")][name] = instance
-        return instance
+        """
+        Here we autogenerates all the schemas configured for this GQLModel
+        """
+        gql_model: GQLModel = super().__new__(cls, name, bases, attrs)  # type: ignore
+        gql_model._gql_args = {}  # type: ignore
+        gql_model._gql_object_type_tree = {}  # type: ignore
+        return gql_model
 
 
 class GQLModel(models.Model, metaclass=GQLModelMeta):
@@ -43,21 +37,27 @@ class GQLModel(models.Model, metaclass=GQLModelMeta):
     Define your GraphQL Schema and DB all in one, avoiding repeating each field declaration here and in the graphql element
     """
 
-    # _cached_struct:
-    is_singleton: bool = False
-    schema_type: GQLSchemaType = "query"
+    gql_is_singleton: bool = False
+    gql_schema_type: list[GQLSchemaType] = DEFAULT_SCHEMA_TYPES
 
-    _gql_object_type: graphene.Field | None = None
-    _gql_schema_type: GQLSchemaType = "query"  # default it to "general instead"
+    _gql_object_type_tree: dict[GQLSchemaType, graphene.Field] = (
+        {}
+    )  # this is not treated as an static var is here just for easy of use perhaps declaring it in the init would be better
     _gql_args: dict[str, graphene.Argument] = (
         {}
     )  # This is not used as static as it seems the GQLModelMeta make it instance dependant
 
     @classmethod
-    def get_gql_object_type(cls, discard_related_from: Self | None = None):
-        if not cls._gql_object_type:
-            cls.__generate_object_type(discard_related_from)
-        return cls._gql_object_type
+    def get_gql_object_type(
+        cls, schema_type: GQLSchemaType, discard_related_from: Self | None = None
+    ):
+        if (
+            schema_type not in cls.gql_schema_type
+        ):  # if this model doesnt support the given schema type
+            return None
+        if schema_type not in cls._gql_object_type_tree:
+            cls.__generate_object_type(schema_type, discard_related_from)
+        return cls._gql_object_type_tree[schema_type]
 
     @classmethod
     def get_gql_name(
@@ -66,87 +66,140 @@ class GQLModel(models.Model, metaclass=GQLModelMeta):
         return cls._meta.model_name or cls.__class__.__name__
 
     @classmethod
-    def check(cls, **kwargs: dict[str, Any]):
-        cls.__generate_object_type()
-        return super().check(**kwargs)
-
-    @classmethod
-    def __generate_object_type(cls, discard_related_from: Self | None = None):
+    def __generate_object_type(
+        cls,
+        gql_schema_type: GQLSchemaType,
+        discard_related_from: Self | None = None,
+    ):
+        """Generate the Object Type for this model having in consideration whether or not this is for a mutation, query or subscription"""
         logging.debug(f"Generating schema type for model {cls.get_gql_name()}")
-        gql_fields: dict[str, graphene.Field] = {}
-        for field in cls._meta.get_fields(True, False):
-            # TODO Actually all fields aren't GQLField some are GQLRelatedFields which are handled slightly (totally) differently, so we must unify them
-            gql_fields[cast(GQLField, field).name] = GQLField.to_gql_field(
-                field,
-                cls._gql_schema_type,
-                cls,
-                discard_related_from=cast(models.Model, discard_related_from),
-            )
-            # ignore else states as are not supported fields yet
-        cls._gql_object_type = cls.__get_gql_field(
-            gql_fields,
-        )
-        logging.debug(
-            "Generated ObjectType for model %s: %s, fields: %s",
-            cls.get_gql_name(),
-            cls._gql_schema_type,
-            gql_fields,
-        )
-
-    @classmethod
-    def __get_gql_field(cls, fields: dict[str, graphene.Field]):
-        if cls._gql_object_type is None:
-            # NOTE: Queries always use graphene.Field
-            cls._gql_object_type = graphene.Field(
-                type(
-                    cls.get_gql_name(),
-                    (graphene.ObjectType,),
-                    fields,
-                ),
-                description=cls.__doc__,
-                resolver=cls.__default_resolver,
-                name=cls.get_gql_name(),
-                args=cls.__get_args(),
+        _gql_schema_type: list[GQLSchemaType] = (
+            gql_schema_type
+            and [
+                gql_schema_type
+            ]  # if the value gql_schema (the one in the params) is set then we set it as a schema list
+        ) or cls.gql_schema_type
+        for schema_type in _gql_schema_type:
+            gql_fields: dict[str, graphene.Field] = {}
+            for field in cls._meta.get_fields(True, False):
+                # TODO Actually all fields aren't GQLField some are GQLRelatedFields which are handled slightly (totally) differently, so we must unify them
+                gql_fields[cast(GQLField, field).name] = GQLField.to_gql_field(
+                    field,
+                    schema_type,
+                    cls,
+                    discard_related_from=cast(models.Model, discard_related_from),
+                )
+                # ignore else states as are not supported fields yet
+            cls._gql_object_type_tree[schema_type] = (
+                cls.__get_gql_field(  # Once we got all fields we get and this OT and create a new Field
+                    gql_fields, schema_type=schema_type
+                )
             )
             logging.debug(
-                "GQLModel: name: %s, fields: %s, content: %s",
+                "Generated ObjectType for model %s: %s, fields: %s",
                 cls.get_gql_name(),
-                fields,
-                cls._gql_object_type.__dict__,
+                schema_type,
+                gql_fields,
             )
-        return cls._gql_object_type
+
+    @classmethod
+    def __get_gql_field(
+        cls, fields: dict[str, graphene.Field], schema_type: GQLSchemaType
+    ):
+        # NOTE: Queries always use graphene.Field
+        if schema_type == "mutation":
+            if "mutation" not in cls._gql_object_type_tree:
+                mutation_instance: graphene.Mutation = cast(
+                    graphene.Mutation,
+                    type(
+                        cls.get_gql_name(),
+                        (graphene.Mutation,),
+                        fields
+                        | {
+                            "Arguments": type("Arguments", (object,), cls.__get_args()),
+                            "mutate": cls.__default_mutate,
+                        },
+                    ),
+                )
+                cls._gql_object_type_tree["mutation"] = cast(
+                    graphene.Field,
+                    mutation_instance.Field(  # type: ignore
+                        name=cls.get_gql_name(),
+                        description=cls.__doc__,
+                    ),
+                )
+            return cls._gql_object_type_tree["mutation"]
+        else:
+            if schema_type not in cls._gql_object_type_tree:
+                extra_fields = {}
+                if schema_type == "subscription":
+                    for field in fields:
+                        extra_fields[f"subscribe_{field}"] = cls.__default_subscribe
+                cls._gql_object_type_tree[schema_type] = graphene.Field(
+                    type(
+                        cls.get_gql_name(),
+                        (graphene.ObjectType,),
+                        fields | extra_fields,
+                    ),
+                    name=cls.get_gql_name(),
+                    description=cls.__doc__,
+                    resolver=cls.__default_resolver if schema_type == "query" else None,
+                    args=cls.__get_args(),
+                )
+            return cls._gql_object_type_tree[schema_type]
 
     @classmethod
     def __get_args(cls):
-        for field in cls._meta.get_fields():
-            if field.is_relation:  # type: ignore
-                pass
-            else:
-                cls._gql_args.update(
-                    {
-                        field.name: graphene.Argument(  # type:ignore
-                            type(GQLField.to_gql_field(field, cls.schema_type, cls)),
-                            name=field.name,  # type:ignore
-                            required=False,
-                        )
-                    }
-                )
+        """
+        Get the arguments used for this model, for example arguments for filtering or so, this args are given to the resolvers
+        """
+        for schema_type in cls.gql_schema_type:
+            for field in cls._meta.get_fields():
+                if field.is_relation:  # type: ignore
+                    pass
+                else:
+                    cls._gql_args.update(
+                        {
+                            field.name: graphene.Argument(  # type:ignore
+                                type(
+                                    GQLField.to_gql_field(field, schema_type, cls)
+                                ),  # TODO: Perhaps we'd want to handle args in a different way than fields
+                                name=field.name,  # type:ignore
+                                required=False,
+                            )
+                        }
+                    )
         return cls._gql_args
 
     @classmethod
-    def get_gql_field(cls, gql_type: GQLSchemaType) -> BaseType:
-        logging.debug('Obtaining the field for the schema type: "%s"', gql_type)
-        cls._gql_schema_type = gql_type
-        if not cls._gql_object_type:
-            cls.__generate_object_type()
-        logging.debug("Schema type field %s generated...", cls._gql_object_type)
-        return cast(BaseType, cls._gql_object_type)
+    def get_gql_field(cls, gql_schema_type: GQLSchemaType) -> BaseType | None:
+        """
+        Public function to obtain this model as the graphene.Field expected, if a mutation you'll obtain a Mutation.Field if a query you'll obtain graphene.Field(ObjectType,...) so please use this function instead of any other here for GraphQL schema generation purposes
+        """
+        logging.debug('Obtaining the field for the schema type: "%s"', gql_schema_type)
+        if (
+            gql_schema_type in cls.gql_schema_type
+        ):  # if either the requested schema type is the defined one or the requested one is "general"
+            if (
+                gql_schema_type not in cls._gql_object_type_tree
+            ):  # only process it if not already processed it
+                cls.__generate_object_type(gql_schema_type=gql_schema_type)
+            logging.debug(
+                "Schema type field %s generated...",
+                cls._gql_object_type_tree[gql_schema_type],
+            )
+            return cast(BaseType, cls._gql_object_type_tree[gql_schema_type])
+        else:
+            logging.debug(
+                f'Schema type requested is not defined in this model intended schema type, if this is wrong please update the object {cls.__name__} attribute "gql_schema_type" to include "{gql_schema_type}"'
+            )
+            return None
 
     @classmethod
     def get_gql_operation_type(
         cls,
-    ) -> GQLSchemaType:
-        return cls._gql_schema_type
+    ) -> list[GQLSchemaType]:
+        return cls.gql_schema_type
 
     @classmethod
     def __default_resolver(
@@ -232,24 +285,48 @@ class GQLModel(models.Model, metaclass=GQLModelMeta):
             return model_object_type(**result_args)  # type:ignore
 
     @classmethod
-    def __default_mutation(  # type: ignore[reportUnusedFunction]
-        cls,
-        root: Any,
-        info: GraphQLResolveInfo,
-        *args: list[Any],
-        **kwargs: dict[str, Any],
-    ) -> list[BaseType] | BaseType:
-        return type(cls.get_gql_field(gql_type="mutation"))()
+    def __default_mutate(
+        cls, _: Any, info: GraphQLResolveInfo, *args: Any, **kwargs: Any
+    ):
+        """
+        This method is already connected to the mutations of the Senjor GQL schema
+        TODO
+        In the Arguments class for this mutation we should:
+        - [ ] Create args named filter_by_{argname} so those tell us how to filter the models
+        - [ ] This method should allow the dev to update any way he wants the db from the graphql schema, perhaps making something like an RPC here would be cool
+        """
+        logging.debug(f"{info}, {args}, {kwargs}")
 
     @classmethod
-    async def __default_subscriber(  # type: ignore[reportUnusedFunction]
-        cls,
-        root: Any,
-        info: GraphQLResolveInfo,
-        *args: list[Any],
-        **kwargs: dict[str, Any],
-    ) -> list[BaseType] | BaseType:
-        return type(cls.get_gql_field("subscription"))()
+    async def __default_subscribe(
+        cls, root: Any, info: GraphQLResolveInfo, *args: Any, **kwargs: Any
+    ):
+        """
+        Default subscriber
+        """
+        logging.debug(f"{cls} {info}, {args}, {kwargs}")
+        for i in range(5):
+            yield f"Ping #{i}"
+            await asyncio.sleep(1)
+
+    @classmethod
+    async def default_model_subscribe(
+        cls, _: Any, info: GraphQLResolveInfo, *args: Any, **kwargs: Any
+    ):
+        """
+        Default subscriber for the model this is being used in the Root schema as the default subscribe function for each field.
+
+        This function is the reason why this framework was made and between its feature it is:
+
+        1. Connect each model to the post_save signal for auto notifying users of changes in their requested fields.
+        2. More coming soon...
+
+        Each type base method should carefully handle the fields and resolve them, making a simple django model turn into a powerful GraphQL schema
+        """
+        logging.debug(f"{info}, {args}, {kwargs}")
+        for i in range(5):
+            yield cls(id=i, content=f"Ping #{i}")
+            await asyncio.sleep(1)
 
     class Meta:
         abstract = True
