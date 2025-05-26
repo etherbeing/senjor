@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
-from .signals import senjor_ready
+from .signals import senjor_ready  # type: ignore
 
 
 class Senjor(AppConfig):
