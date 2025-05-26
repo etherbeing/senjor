@@ -1,5 +1,6 @@
 from django.apps import AppConfig
-from .signals import socketio_ready
+
+from .signals import senjor_ready
 
 
 class Senjor(AppConfig):
@@ -9,6 +10,6 @@ class Senjor(AppConfig):
     def ready(self):
         super().ready()
 
-        socketio_ready.send(
+        senjor_ready.send(  # type: ignore
             self,
         )

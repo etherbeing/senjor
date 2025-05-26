@@ -2,18 +2,19 @@ import datetime
 import importlib
 import logging
 import sys
+from typing import Any, cast
 
+from daphne.endpoints import build_endpoint_description_strings  # type: ignore
+from daphne.server import Server
 from django.apps import apps
 from django.conf import settings
-from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler
+from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler  # type: ignore
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import CommandError
+from django.core.management.base import CommandParser
 from django.core.management.commands.runserver import Command as RunserverCommand
 
 from senjor import __version__
-from daphne.endpoints import build_endpoint_description_strings
-from daphne.server import Server
-
 from senjor.setup import setup_senjor
 
 logger = logging.getLogger("django.channels.server")
@@ -21,32 +22,35 @@ logger = logging.getLogger("django.channels.server")
 BASE_URLCONF = settings.ROOT_URLCONF
 settings.ROOT_URLCONF = "senjor.urls"
 
+
 def get_default_application():
     """
     Gets the default application, set in the ASGI_APPLICATION setting.
     """
     try:
         path, name = settings.ASGI_APPLICATION.rsplit(".", 1)
-    except (ValueError, AttributeError):
-        raise ImproperlyConfigured("Cannot find ASGI_APPLICATION setting.")
+    except (ValueError, AttributeError) as ex:
+        raise ImproperlyConfigured("Cannot find ASGI_APPLICATION setting.") from ex
     try:
         module = importlib.import_module(path)
-    except ImportError:
-        raise ImproperlyConfigured("Cannot import ASGI_APPLICATION module %r" % path)
+    except ImportError as ex:
+        raise ImproperlyConfigured(
+            "Cannot import ASGI_APPLICATION module %r" % path
+        ) from ex
     try:
         value = getattr(module, name)
-    except AttributeError:
+    except AttributeError as ex:
         raise ImproperlyConfigured(
             f"Cannot find {name!r} in ASGI_APPLICATION module {path}"
-        )
+        ) from ex
     return value
 
 
 class Command(RunserverCommand):
     protocol = "http"
-    server_cls = Server
+    server_cls: type[Server] = Server
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser):
         super().add_arguments(parser)
         parser.add_argument(
             "--noasgi",
@@ -78,7 +82,7 @@ class Command(RunserverCommand):
             ),
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any):
         self.http_timeout = options.get("http_timeout", None)
         self.websocket_handshake_timeout = options.get("websocket_handshake_timeout", 5)
         # Check Channels is installed right
@@ -89,12 +93,12 @@ class Command(RunserverCommand):
         # Dispatch upward
         super().handle(*args, **options)
 
-    def inner_run(self, *args, **options):
+    def inner_run(self, *args: Any, **options: Any) -> None:
         # Maybe they want the wsgi one?
         if not options.get("use_asgi", True):
             if hasattr(RunserverCommand, "server_cls"):
-                self.server_cls = RunserverCommand.server_cls
-            return RunserverCommand.inner_run(self, *args, **options)
+                self.server_cls: type[Server] = cast(type[Server], RunserverCommand.server_cls)  # type: ignore
+            return cast(None, RunserverCommand.inner_run(self, *args, **options))  # type: ignore
         # Run checks
         self.stdout.write("Performing system checks...\n\n")
         self.check(display_num_errors=True)
@@ -115,18 +119,18 @@ class Command(RunserverCommand):
                 "senjor_version": __version__,
                 "settings": settings.SETTINGS_MODULE,
                 "protocol": self.protocol,
-                "addr": "[%s]" % self.addr if self._raw_ipv6 else self.addr,
-                "port": self.port,
+                "addr": "[%s]" % self.addr if self._raw_ipv6 else self.addr,  # type: ignore
+                "port": self.port,  # type: ignore
                 "quit_command": quit_command,
             }
         )
 
         # Launch server in 'main' thread. Signals are disabled as it's still
         # actually a subthread under the autoreloader.
-        logger.debug("Senjor/Daphne running, listening on %s:%s", self.addr, self.port)
+        logger.debug("Senjor/Daphne running, listening on %s:%s", self.addr, self.port)  # type: ignore
 
         # build the endpoint description string from host/port options
-        endpoints = build_endpoint_description_strings(host=self.addr, port=self.port)
+        endpoints: list[str] = cast(list[str], build_endpoint_description_strings(host=self.addr, port=self.port))  # type: ignore
         try:
             self.server_cls(
                 application=self.get_application(options),
@@ -136,7 +140,7 @@ class Command(RunserverCommand):
                 http_timeout=self.http_timeout,
                 root_path=getattr(settings, "FORCE_SCRIPT_NAME", "") or "",
                 websocket_handshake_timeout=self.websocket_handshake_timeout,
-            ).run()
+            ).run()  # type: ignore
             logger.debug("Daphne exited")
         except KeyboardInterrupt:
             shutdown_message = options.get("shutdown_message", "")
@@ -144,7 +148,7 @@ class Command(RunserverCommand):
                 self.stdout.write(shutdown_message)
             return
 
-    def get_application(self, options):
+    def get_application(self, options: dict[str, Any]):
         """
         Returns the static files serving application wrapping the default application,
         if static files should be served. Otherwise, just returns the default
@@ -155,11 +159,13 @@ class Command(RunserverCommand):
         insecure_serving = options.get("insecure_serving", False)
 
         if use_static_handler and (settings.DEBUG or insecure_serving):
-            return setup_senjor(ASGIStaticFilesHandler(get_default_application()), urlpatterns_urlconf=BASE_URLCONF)
+            return setup_senjor(ASGIStaticFilesHandler(get_default_application()), urlpatterns_urlconf=BASE_URLCONF)  # type: ignore
         else:
-            return setup_senjor(get_default_application(), urlpatterns_urlconf=BASE_URLCONF)
+            return setup_senjor(
+                get_default_application(), urlpatterns_urlconf=BASE_URLCONF
+            )
 
-    def log_action(self, protocol, action, details):
+    def log_action(self, protocol: str, action: str, details: dict[str, Any]):
         """
         Logs various different kinds of requests to the console.
         """
