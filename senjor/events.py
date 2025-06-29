@@ -11,6 +11,8 @@ from graphql import MapAsyncIterator
 from graphql.error.graphql_error import GraphQLError
 from socketio import AsyncServer
 
+from senjor.core.attributes import graphql_schema
+
 
 def normalize_headers(headers: dict[Any, Any]) -> dict[Any, Any]:
     result: dict[Any, Any] = {}
@@ -72,37 +74,28 @@ class SenjorRTC:
         self,
         app: AsyncServer,
         gql_url: str,
-        gql_subscription_channel: str,
     ) -> None:
         # This GQL Schema runs separately from the synchronous and default HTTP one, this is an specific setup of Senjor
-        self.GQL_ROOT_SCHEMA: Schema = import_string(
-            settings.GRAPHENE.get("SCHEMA")
-        )  # this module depends on graphene
         self.GQL_URL: str = gql_url
-        self.GQL_SUBSCRIPTION_CHANNEL: str = gql_subscription_channel
         self.GQL_RTC_APP = app
 
-    async def __echo(self, sid: str, data: Any):
-        await self.GQL_RTC_APP.emit("message", data, room=sid)  # type: ignore Echo back the same message
-
-    async def __scoped_echo(self, sid: str, data: Any):
-        await self.GQL_RTC_APP.emit("message", data, room=sid, namespace="/scope")  # type: ignore Echo back the same message
-
-    async def _manage_result(self, result: Any, room: str):
+    async def _manage_result(self, result: Any, room: str, event: str):
         await self.GQL_RTC_APP.emit(  # type: ignore
-            self.GQL_SUBSCRIPTION_CHANNEL,
+            event,
             result.formatted,
             room=room,
             namespace=self.GQL_URL,
         )
 
-    async def _manage_error(self, errors: Iterable[Any], room: str):
+    async def _manage_error(self, errors: Iterable[Any], room: str, event: str):
         for error in errors:
             await self.GQL_RTC_APP.emit(  # type: ignore
                 "error", error.formatted, room=room, namespace=self.GQL_URL
             )
 
-    async def __subscribe(self, sid: str, data: str):
+    async def __handle_graphql(
+        self, event_name: str, sid: str, data: str, *args: Any, **kwargs: Any
+    ):
         environ: dict[str, Any] = cast(
             dict[str, Any],
             self.GQL_RTC_APP.get_environ(sid, self.GQL_URL),  # type: ignore
@@ -110,9 +103,9 @@ class SenjorRTC:
         query_params = environ and parse_qs(environ.get("QUERY_STRING")) or {}
         results: MapAsyncIterator = cast(
             MapAsyncIterator,
-            await self.GQL_ROOT_SCHEMA.subscribe(  # type: ignore
+            await graphql_schema.execute_async(  # type: ignore
                 data,
-                root=self.GQL_ROOT_SCHEMA,
+                root=graphql_schema,
                 operation_name=query_params.get("operationName", [None])[0],
                 context={
                     "headers": (
@@ -129,21 +122,19 @@ class SenjorRTC:
             if hasattr(results, "__aiter__"):
                 async for result in results:
                     if result.errors:
-                        await self._manage_error(result.errors, sid)
+                        await self._manage_error(result.errors, sid, event_name)
                     else:
-                        await self._manage_result(result, sid)
+                        await self._manage_result(result, sid, event_name)
             else:
                 if hasattr(results, "errors"):
-                    await self._manage_error(results.errors, sid)  # type: ignore
+                    await self._manage_error(results.errors, sid, event_name)  # type: ignore
                 else:
-                    await self._manage_result(results, sid)
+                    await self._manage_result(results, sid, event_name)
         except GraphQLError as ex:
-            await self._manage_error([ex], room=sid)
+            await self._manage_error([ex], room=sid, event=event_name)
 
     def setup(
         self,
     ):
         logging.info("Setting up the RTC framework of Senjor")
-        self.GQL_RTC_APP.event(self.__echo)  # type: ignore
-        self.GQL_RTC_APP.event(namespace="/scope")(self.__scoped_echo)  # type: ignore
-        self.GQL_RTC_APP.on(self.GQL_SUBSCRIPTION_CHANNEL, handler=self.__subscribe, namespace=self.GQL_URL)  # type: ignore
+        self.GQL_RTC_APP.on("*", self.__handle_graphql, namespace=self.GQL_URL)  # type: ignore

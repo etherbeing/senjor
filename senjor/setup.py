@@ -7,13 +7,13 @@ from channels.routing import ProtocolTypeRouter
 from django.conf import settings
 from django.core.handlers.asgi import ASGIHandler
 
+from .apps import Senjor
 from .events import SenjorRTC
 
 
 def setup_sio(
     app: ASGIHandler | socketio.ASGIApp,
     gql_url: str = "/ws/graphql/",
-    gql_subscription_channel: str = "graph-subscribe",
 ):
     """
     Setup socket.io
@@ -41,9 +41,7 @@ def setup_sio(
     # settings.SIO_URL = gql_url
     # settings.SIO_SUBSCRIPTION_CHANNEL = gql_subscription_channel
     # this setup the actual ws router handler to deliver the message where it should
-    SenjorRTC(
-        sio, gql_url=gql_url, gql_subscription_channel=gql_subscription_channel
-    ).setup()
+    SenjorRTC(sio, gql_url=gql_url).setup()
 
     return router
 
@@ -51,6 +49,10 @@ def setup_sio(
 def setup_settings():
     logging.debug("Setting up the settings")
     settings.DEFAULT_AUTO_FIELD = "senjor.models.fields.common.GQLAutoField"
+    settings.INSTALLED_APPS.insert(
+        settings.INSTALLED_APPS.index(Senjor.name), "strawberry.django"
+    )
+    print(settings.INSTALLED_APPS)
 
 
 def setup_senjor(

@@ -1,4 +1,4 @@
 # Root Schema definition
-from senjor.core.schema import GQLRootSchema
+from senjor.core.schema import generate_root_schema
 
-graphql_schema = GQLRootSchema()
+graphql_schema = generate_root_schema()

@@ -5,8 +5,8 @@ from senjor import models
 
 # Create your models here.
 class Message(models.Model):
-    sender = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, related_name='sender')
-    receiver = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, related_name='receiver')
+    sender = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, related_name="sender")  # type: ignore
+    receiver = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, related_name="receiver")  # type: ignore
     content = models.TextField()
 
 
