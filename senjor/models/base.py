@@ -100,12 +100,6 @@ class GQLModel(models.Model, metaclass=GQLModelMeta):
         element = await cls.objects.afirst()
         for field_name in fields:
             fields[field_name].instance = element  # type: ignore
-        # 1. Determine whether to return a single element or a list of elements
-        # 2. Resolve fields
-        # results = []
-        # async for element in elements:
-        #     results.append(gql_model_field.resolve_type())
-
         return cast(StrawberryType, gql_model_field.resolve_type())
 
     class Meta:
